@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UPC Barcode Generator</title>
+  
+  <!-- JsBarcode CDN Library -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f8f9fa;
+      color: #333;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+    
+    .card {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+
+    input {
+      font-size: 16px;
+      padding: 10px 14px;
+      width: 200px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    button {
+      font-size: 16px;
+      padding: 10px 16px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-left: 6px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .danger-btn {
+      background-color: #dc3545;
+    }
+
+    .danger-btn:hover {
+      background-color: #bd2130;
+    }
+
+    .barcode-container {
+      margin: 25px 0;
+      padding: 15px;
+      background: #fff;
+    }
+
+    .error-msg {
+      color: #dc3545;
+      font-size: 14px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    /* History Section */
+    .history-section {
+      margin-top: 30px;
+      text-align: left;
+      border-top: 1px solid #eee;
+      padding-top: 15px;
+    }
+
+    .history-list {
+      list-style: none;
+      padding: 0;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px dashed #eee;
+    }
+
+    .history-item button {
+      font-size: 12px;
+      padding: 4px 8px;
+    }
+
+    /* PRINT STYLES: Hides UI controls so only the barcode prints */
+    @media print {
+      body {
+        background: white;
+        padding: 0;
+      }
+      .card {
+        box-shadow: none;
+        padding: 0;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .barcode-container {
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2 class="no-print">UPC Barcode Generator</h2>
+    
+    <div class="no-print">
+      <input type="text" id="upcInput" placeholder="Enter 12-digit UPC" maxlength="12" />
+      <button onclick="handleGenerate()">Generate</button>
+      <div id="error" class="error-msg">Please enter a valid 12-digit UPC number.</div>
+    </div>
+
+    <!-- Barcode Render Area -->
+    <div class="barcode-container">
+      <svg id="barcode"></svg>
+    </div>
+
+    <div class="no-print">
+      <button onclick="window.print()">🖨️ Print Barcode</button>
+    </div>
+
+    <!-- LocalStorage Saved History -->
+    <div class="history-section no-print">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h4 style="margin: 0;">Recent Barcodes</h4>
+        <button class="danger-btn" onclick="clearHistory()" style="font-size: 11px; padding: 4px 8px;">Clear</button>
+      </div>
+      <ul id="historyList" class="history-list"></ul>
+    </div>
+  </div>
+
+  <script>
+    // Load history from localStorage on page load
+    let savedHistory = JSON.parse(localStorage.getItem('my_upc_history')) || [];
+
+    function renderHistory() {
+      const list = document.getElementById('historyList');
+      list.innerHTML = '';
+
+      if (savedHistory.length === 0) {
+        list.innerHTML = '<li style="color:#888; font-size:13px; padding:8px 0;">No saved barcodes yet.</li>';
+        return;
+      }
+
+      savedHistory.forEach((code, index) => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+        li.innerHTML = `
+          <span><strong>${code}</strong></span>
+          <div>
+            <button onclick="loadCode('${code}')">Load</button>
+            <button class="danger-btn" onclick="deleteItem(${index})">✕</button>
+          </div>
+        `;
+        list.appendChild(li);
+      });
+    }
+
+    function generateBarcode(upc) {
+      const errorDiv = document.getElementById('error');
+      
+      // Basic UPC-A format check (must be 12 digits)
+      if (!/^\d{12}$/.test(upc)) {
+        errorDiv.innerText = "Please enter a valid 12-digit UPC number.";
+        errorDiv.style.display = "block";
+        document.getElementById('barcode').style.display = "none";
+        return false;
+      }
+
+      try {
+        JsBarcode("#barcode", upc, {
+          format: "UPC",
+          lineColor: "#000",
+          width: 2,
+          height: 100,
+          displayValue: true
+        });
+        errorDiv.style.display = "none";
+        document.getElementById('barcode').style.display = "inline-block";
+        return true;
+      } catch (err) {
+        // Triggers if checksum validation fails
+        errorDiv.innerText = "Invalid UPC checksum number.";
+        errorDiv.style.display = "block";
+        document.getElementById('barcode').style.display = "none";
+        return false;
+      }
+    }
+
+    function handleGenerate() {
+      const input = document.getElementById('upcInput').value.trim();
+      if (generateBarcode(input)) {
+        saveToLocalStorage(input);
+      }
+    }
+
+    function saveToLocalStorage(upc) {
+      // Add UPC to the beginning of history list (avoid duplicates)
+      savedHistory = savedHistory.filter(item => item !== upc);
+      savedHistory.unshift(upc);
+      
+      // Limit saved items to 10
+      if (savedHistory.length > 10) savedHistory.pop();
+
+      localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
+      renderHistory();
+    }
+
+    function loadCode(code) {
+      document.getElementById('upcInput').value = code;
+      generateBarcode(code);
+    }
+
+    function deleteItem(index) {
+      savedHistory.splice(index, 1);
+      localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
+      renderHistory();
+    }
+
+    function clearHistory() {
+      savedHistory = [];
+      localStorage.removeItem('my_upc_history');
+      renderHistory();
+    }
+
+    // Startup logic
+    window.onload = function() {
+      renderHistory();
+      // Load most recent barcode or a default placeholder UPC
+      const initialCode = savedHistory.length > 0 ? savedHistory[0] : '012345678905';
+      document.getElementById('upcInput').value = initialCode;
+      generateBarcode(initialCode);
+    };
+  </script>
+</body>
+</html>

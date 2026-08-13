@@ -61,9 +61,20 @@
       border-radius: 6px;
       cursor: pointer;
       margin: 4px;
+      transition: opacity 0.2s ease, background-color 0.2s ease;
     }
 
     button:hover { background-color: #0056b3; }
+
+    /* GRAYED OUT / DISABLED BUTTON STYLES */
+    button:disabled {
+      opacity: 0.4 !important;
+      cursor: not-allowed !important;
+      background-color: #6c757d !important;
+      box-shadow: none !important;
+      pointer-events: none;
+    }
+
     .purple-btn { background-color: #6f42c1; }
     .purple-btn:hover { background-color: #593196; }
     .success-btn { background-color: #28a745; }
@@ -153,7 +164,6 @@
       overflow: hidden;
     }
 
-    /* Tab navigation inside Avery Modal */
     .tab-bar {
       display: flex;
       border-bottom: 2px solid #ddd;
@@ -322,7 +332,7 @@
     <div class="no-print">
       <div class="input-group">
         <input type="text" id="itemNameInput" class="field-input" placeholder="Item Name / Description (Optional)" />
-        <input type="text" id="upcInput" class="field-input" placeholder="Enter 12-digit UPC" maxlength="12" />
+        <input type="text" id="upcInput" class="field-input" placeholder="Enter 12-digit UPC" maxlength="12" oninput="validateMainForm()" />
       </div>
       <div>
         <button onclick="handleGenerate()">Generate</button>
@@ -340,8 +350,8 @@
 
     <!-- Action Buttons -->
     <div class="no-print">
-      <button onclick="window.print()">🖨️ Print Single</button>
-      <button class="warning-btn" onclick="openAveryModal()">🏷️ Print Label Sheet</button>
+      <button id="mainPrintSingleBtn" onclick="window.print()">🖨️ Print Single</button>
+      <button id="mainPrintSheetBtn" class="warning-btn" onclick="openAveryModal()">🏷️ Print Label Sheet</button>
       <button class="secondary-btn" onclick="copyBarcodeImage()">📋 Copy</button>
       <button class="secondary-btn" onclick="downloadBarcode()">💾 Download</button>
       <button class="success-btn" onclick="handleEmail()">✉️ Email</button>
@@ -387,7 +397,6 @@
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 12px;">Print Label Sheet</h3>
 
-      <!-- Template Selector -->
       <div style="margin-bottom: 15px; background: #f1f3f5; padding: 10px; border-radius: 6px;">
         <label style="font-size:13px; font-weight:bold;">Select Label Template:</label><br/>
         <select id="averyTemplateSelect" style="width:100%; margin-top:4px;" onchange="onTemplateChange()">
@@ -416,11 +425,11 @@
         <div style="display:flex; gap:10px; margin-bottom: 20px;">
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Start Position:</label><br/>
-            <input type="number" id="averyStartCell" min="1" max="30" value="1" style="width:100%; margin-top:4px;" />
+            <input type="number" id="averyStartCell" min="1" max="30" value="1" style="width:100%; margin-top:4px;" oninput="checkPrintReady()" />
           </div>
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Label Quantity:</label><br/>
-            <input type="number" id="averyQuantity" min="1" max="300" value="1" style="width:100%; margin-top:4px;" />
+            <input type="number" id="averyQuantity" min="1" max="300" value="1" style="width:100%; margin-top:4px;" oninput="checkPrintReady()" />
           </div>
         </div>
       </div>
@@ -430,7 +439,7 @@
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
           <label style="font-size:13px; font-weight:bold;">Quantities per History Item:</label>
           <span style="font-size:12px; color:#666;">Start Cell: 
-            <input type="number" id="averyBatchStartCell" min="1" max="30" value="1" style="width:50px; padding:3px 6px;" />
+            <input type="number" id="averyBatchStartCell" min="1" max="30" value="1" style="width:50px; padding:3px 6px;" oninput="checkPrintReady()" />
           </span>
         </div>
 
@@ -450,7 +459,7 @@
 
       <div style="text-align: right; margin-top: 15px;">
         <button class="secondary-btn" onclick="closeAveryModal()">Cancel</button>
-        <button class="warning-btn" onclick="printAverySheet()">🖨️ Print Label Sheet</button>
+        <button id="modalPrintBtn" class="warning-btn" onclick="printAverySheet()">🖨️ Print Label Sheet</button>
       </div>
     </div>
   </div>
@@ -476,6 +485,51 @@
     let html5QrcodeScanner = null;
     let currentAveryTab = 'single';
     let importedBatchMap = {}; 
+
+    /* NORMALIZE & REPAIR UPC CHECKSUMS AUTOMATICALLY */
+    function normalizeUPC(rawInput) {
+      let digits = (rawInput || '').toString().replace(/\D/g, '');
+      
+      // Handle 13-digit EAN starting with 0
+      if (digits.length === 13 && digits.startsWith('0')) {
+        digits = digits.substring(1);
+      }
+
+      // If 11 digits, calculate missing 12th check digit
+      if (digits.length === 11) {
+        return digits + calcUPCCheckDigit(digits);
+      }
+
+      // If 12 digits, check if check digit is valid or if leading zero was stripped
+      if (digits.length === 12) {
+        const expectedCheck = calcUPCCheckDigit(digits.substring(0, 11));
+        if (parseInt(digits[11], 10) === expectedCheck) {
+          return digits; // Already perfectly valid
+        }
+
+        // Test if Excel stripped a leading zero
+        const padded = '0' + digits.substring(0, 11);
+        const paddedCheck = calcUPCCheckDigit(padded.substring(0, 11));
+        if (parseInt(digits[11], 10) === paddedCheck) {
+          return padded; // Recovered leading zero!
+        }
+
+        // Otherwise repair the 12th check digit
+        return digits.substring(0, 11) + expectedCheck;
+      }
+
+      return digits;
+    }
+
+    function calcUPCCheckDigit(first11Digits) {
+      let sumOdd = 0, sumEven = 0;
+      for (let i = 0; i < 11; i++) {
+        let d = parseInt(first11Digits[i] || '0', 10);
+        if (i % 2 === 0) sumOdd += d;
+        else sumEven += d;
+      }
+      return (10 - ((sumOdd * 3 + sumEven) % 10)) % 10;
+    }
 
     function renderHistory() {
       const list = document.getElementById('historyList');
@@ -504,6 +558,8 @@
         `;
         list.appendChild(li);
       });
+
+      validateMainForm();
     }
 
     function escapeHtml(str) {
@@ -512,41 +568,62 @@
 
     function generateBarcode(upc, itemName = '') {
       const errorDiv = document.getElementById('error');
-      
-      if (!/^\d{12}$/.test(upc)) {
+      const normalized = normalizeUPC(upc);
+
+      if (!/^\d{12}$/.test(normalized)) {
         errorDiv.innerText = "Please enter a valid 12-digit UPC number.";
         errorDiv.style.display = "block";
         document.getElementById('barcode').style.display = "none";
         document.getElementById('itemTitleDisplay').innerText = '';
+        validateMainForm();
         return false;
       }
 
+      renderSvgOrCanvasBarcode("#barcode", normalized, {
+        format: "UPC",
+        lineColor: "#000",
+        width: 2,
+        height: 100,
+        displayValue: true
+      });
+      
+      document.getElementById('itemTitleDisplay').innerText = itemName;
+      errorDiv.style.display = "none";
+      document.getElementById('barcode').style.display = "inline-block";
+      validateMainForm();
+      return true;
+    }
+
+    /* SAFE BARCODE RENDERER WITH CODE128 FALLBACK */
+    function renderSvgOrCanvasBarcode(selector, code, config) {
       try {
-        JsBarcode("#barcode", upc, {
-          format: "UPC",
-          lineColor: "#000",
-          width: 2,
-          height: 100,
-          displayValue: true
-        });
-        
-        document.getElementById('itemTitleDisplay').innerText = itemName;
-        errorDiv.style.display = "none";
-        document.getElementById('barcode').style.display = "inline-block";
-        return true;
+        JsBarcode(selector, code, config);
       } catch (err) {
-        errorDiv.innerText = "Invalid UPC checksum number.";
-        errorDiv.style.display = "block";
-        document.getElementById('barcode').style.display = "none";
-        document.getElementById('itemTitleDisplay').innerText = '';
-        return false;
+        console.warn("UPC render failed for code:", code, "Falling back to CODE128 format.");
+        try {
+          JsBarcode(selector, code, Object.assign({}, config, { format: "CODE128" }));
+        } catch (err2) {
+          console.error("Barcode render completely failed for:", code, err2);
+        }
       }
     }
 
+    function validateMainForm() {
+      const inputVal = document.getElementById('upcInput').value.trim();
+      const normalized = normalizeUPC(inputVal);
+      const isValid = /^\d{12}$/.test(normalized);
+
+      document.getElementById('mainPrintSingleBtn').disabled = !isValid;
+      document.getElementById('mainPrintSheetBtn').disabled = (savedHistory.length === 0 && !isValid);
+    }
+
     function handleGenerate() {
-      const upc = document.getElementById('upcInput').value.trim();
+      const rawUpc = document.getElementById('upcInput').value.trim();
       const itemName = document.getElementById('itemNameInput').value.trim();
+      const upc = normalizeUPC(rawUpc);
+
       if (generateBarcode(upc, itemName)) {
+        document.getElementById('upcInput').value = upc;
         saveToLocalStorage(upc, itemName);
       }
     }
@@ -596,16 +673,11 @@
 
         if (isNaN(qty) || qty < 0) qty = 1;
 
-        let digits = rawUpc.replace(/\D/g, '');
-        if (digits.length > 0 && digits.length <= 12) {
-          digits = digits.padStart(12, '0');
-        } else if (digits.length === 13 && digits.startsWith('0')) {
-          digits = digits.substring(1);
-        }
+        const normalizedUpc = normalizeUPC(rawUpc);
 
-        if (/^\d{12}$/.test(digits)) {
-          saveToLocalStorage(digits, itemName);
-          importedBatchMap[digits] = qty;
+        if (/^\d{12}$/.test(normalizedUpc)) {
+          saveToLocalStorage(normalizedUpc, itemName);
+          importedBatchMap[normalizedUpc] = qty;
           validCount++;
         }
       });
@@ -628,10 +700,10 @@
       alert(`Successfully processed ${validCount} barcode(s) into your batch sheet!`);
     }
 
-    /* PRINT MANAGER & TEMPLATE SWITCHING */
+    /* PRINT MANAGER & GRAYED-OUT BUTTON CHECKER */
     function openAveryModal() {
       if (savedHistory.length === 0) {
-        const currentUpc = document.getElementById('upcInput').value.trim();
+        const currentUpc = normalizeUPC(document.getElementById('upcInput').value.trim());
         const currentName = document.getElementById('itemNameInput').value.trim();
         if (/^\d{12}$/.test(currentUpc)) {
           saveToLocalStorage(currentUpc, currentName);
@@ -645,6 +717,26 @@
       populateAveryBatchTable();
       onTemplateChange();
       document.getElementById('averyModal').style.display = 'flex';
+      checkPrintReady();
+    }
+
+    function checkPrintReady() {
+      const printBtn = document.getElementById('modalPrintBtn');
+      let totalQty = 0;
+
+      if (currentAveryTab === 'single') {
+        const qty = parseInt(document.getElementById('averyQuantity').value, 10) || 0;
+        const historySelect = document.getElementById('averyHistorySelect');
+        totalQty = (qty > 0 && historySelect.value !== '') ? qty : 0;
+      } else {
+        const inputs = document.querySelectorAll('.batch-qty-input');
+        inputs.forEach(input => {
+          totalQty += (parseInt(input.value, 10) || 0);
+        });
+      }
+
+      // Gray out / disable print button if total quantity is 0
+      printBtn.disabled = (totalQty <= 0);
     }
 
     function onTemplateChange() {
@@ -661,13 +753,14 @@
       if (parseInt(batchStartCell.value) > maxCells) batchStartCell.value = 1;
 
       document.getElementById('capacityHelpText').innerText = `Total sheet capacity: ${maxCells} labels per page.`;
+      checkPrintReady();
     }
 
     function populateAveryHistoryOptions() {
       const select = document.getElementById('averyHistorySelect');
       select.innerHTML = '';
 
-      const currentUpc = document.getElementById('upcInput').value.trim();
+      const currentUpc = normalizeUPC(document.getElementById('upcInput').value.trim());
 
       savedHistory.forEach((item, idx) => {
         const code = typeof item === 'object' ? item.upc : item;
@@ -690,6 +783,7 @@
         const name = typeof item === 'object' ? (item.name || '') : '';
         document.getElementById('averyItemTitle').value = name;
       }
+      checkPrintReady();
     }
 
     function populateAveryBatchTable() {
@@ -701,18 +795,18 @@
         const name = (typeof item === 'object' && item.name) ? item.name : '';
         const label = name ? `<strong>${name}</strong><br/><small style="color:#666">${code}</small>` : `<strong>${code}</strong>`;
         
-        // Defaults to 1 copy for every history item unless specified by batch import
         const initialQty = importedBatchMap[code] !== undefined ? importedBatchMap[code] : 1;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${label}</td>
           <td style="text-align: center;">
-            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" value="${initialQty}" style="width: 55px; padding: 2px 4px; text-align: center;" />
+            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" value="${initialQty}" style="width: 55px; padding: 2px 4px; text-align: center;" oninput="checkPrintReady()" />
           </td>
         `;
         tbody.appendChild(tr);
       });
+      checkPrintReady();
     }
 
     function switchAveryTab(tab) {
@@ -721,13 +815,14 @@
       document.getElementById('tabBatchBtn').className = tab === 'batch' ? 'tab-btn active' : 'tab-btn';
       document.getElementById('averySingleTab').style.display = tab === 'single' ? 'block' : 'none';
       document.getElementById('averyBatchTab').style.display = tab === 'batch' ? 'block' : 'none';
+      checkPrintReady();
     }
 
     function closeAveryModal() {
       document.getElementById('averyModal').style.display = 'none';
     }
 
-    /* MULTI-PAGE AVERY PRINT GENERATOR */
+    /* MULTI-PAGE AVERY PRINT GENERATOR WITH FAILSAFE BARCODE DRAW */
     function printAverySheet() {
       const template = document.getElementById('averyTemplateSelect').value;
       const maxCells = template === '6525' ? 10 : 30;
@@ -748,10 +843,9 @@
         const quantity = parseInt(document.getElementById('averyQuantity').value, 10) || 1;
 
         for (let q = 0; q < quantity; q++) {
-          labelQueue.push({ upc: upc, title: title });
+          labelQueue.push({ upc: normalizeUPC(upc), title: title });
         }
       } else {
-        // Batch mode from history/import
         startCell = parseInt(document.getElementById('averyBatchStartCell').value, 10) || 1;
         const inputs = document.querySelectorAll('.batch-qty-input');
 
@@ -763,7 +857,7 @@
             const upc = typeof item === 'object' ? item.upc : item;
             const title = typeof item === 'object' ? (item.name || '') : '';
             for (let q = 0; q < qty; q++) {
-              labelQueue.push({ upc: upc, title: title });
+              labelQueue.push({ upc: normalizeUPC(upc), title: title });
             }
           }
         });
@@ -818,18 +912,14 @@
 
       for (let k = 1; k <= globalCellIndex; k++) {
         const itemData = labelQueue[k - 1];
-        try {
-          JsBarcode(`#avery-svg-${k}`, itemData.upc, barcodeConfig);
-        } catch (e) {
-          console.warn("JsBarcode render skipped for UPC:", itemData.upc, e);
-        }
+        renderSvgOrCanvasBarcode(`#avery-svg-${k}`, itemData.upc, barcodeConfig);
       }
 
       closeAveryModal();
 
       document.body.classList.add('printing-avery');
 
-      // Delay execution slightly to ensure browser DOM layout finishes rendering SVG elements before triggering print
+      // Slight delay ensures SVGs fully render in DOM before firing print dialog
       setTimeout(() => {
         window.print();
         setTimeout(() => {
@@ -884,10 +974,7 @@
         deviceId,
         { fps: 10, qrbox: { width: 250, height: 120 } },
         (decodedText) => {
-          let upc = decodedText.trim();
-          if (upc.length === 13 && upc.startsWith("0")) {
-            upc = upc.substring(1);
-          }
+          const upc = normalizeUPC(decodedText.trim());
 
           document.getElementById('upcInput').value = upc;
           const itemName = document.getElementById('itemNameInput').value.trim();
@@ -944,7 +1031,7 @@
     }
 
     function handleEmail() {
-      const upc = document.getElementById('upcInput').value.trim();
+      const upc = normalizeUPC(document.getElementById('upcInput').value.trim());
       const itemName = document.getElementById('itemNameInput').value.trim();
       
       if (!/^\d{12}$/.test(upc)) {
@@ -968,17 +1055,19 @@
 
     /* LOCAL STORAGE */
     function saveToLocalStorage(upc, itemName) {
-      savedHistory = savedHistory.filter(item => (typeof item === 'object' ? item.upc : item) !== upc);
-      savedHistory.unshift({ upc: upc, name: itemName });
+      const normalized = normalizeUPC(upc);
+      savedHistory = savedHistory.filter(item => (typeof item === 'object' ? item.upc : item) !== normalized);
+      savedHistory.unshift({ upc: normalized, name: itemName });
       if (savedHistory.length > 100) savedHistory.pop();
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
       renderHistory();
     }
 
     function loadCode(code, name = '') {
-      document.getElementById('upcInput').value = code;
+      const normalized = normalizeUPC(code);
+      document.getElementById('upcInput').value = normalized;
       document.getElementById('itemNameInput').value = name;
-      generateBarcode(code, name);
+      generateBarcode(normalized, name);
     }
 
     function deleteItem(index) {
@@ -997,7 +1086,7 @@
     window.onload = function() {
       renderHistory();
       const initialItem = savedHistory.length > 0 ? savedHistory[0] : { upc: '012345678905', name: 'Sample Item' };
-      const code = typeof initialItem === 'object' ? initialItem.upc : initialItem;
+      const code = normalizeUPC(typeof initialItem === 'object' ? initialItem.upc : initialItem);
       const name = typeof initialItem === 'object' ? (initialItem.name || '') : '';
       
       document.getElementById('upcInput').value = code;
@@ -1006,4 +1095,4 @@
     };
   </script>
 </body>
-  </html>
+</html>

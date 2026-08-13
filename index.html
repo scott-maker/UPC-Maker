@@ -46,11 +46,19 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      margin-left: 6px;
+      margin: 4px;
     }
 
     button:hover {
       background-color: #0056b3;
+    }
+
+    .success-btn {
+      background-color: #28a745;
+    }
+
+    .success-btn:hover {
+      background-color: #218838;
     }
 
     .danger-btn {
@@ -138,8 +146,10 @@
       <svg id="barcode"></svg>
     </div>
 
+    <!-- Action Buttons -->
     <div class="no-print">
       <button onclick="window.print()">🖨️ Print Barcode</button>
+      <button class="success-btn" onclick="handleEmail()">✉️ Email Barcode</button>
     </div>
 
     <!-- LocalStorage Saved History -->
@@ -153,7 +163,6 @@
   </div>
 
   <script>
-    // Load history from localStorage on page load
     let savedHistory = JSON.parse(localStorage.getItem('my_upc_history')) || [];
 
     function renderHistory() {
@@ -182,7 +191,6 @@
     function generateBarcode(upc) {
       const errorDiv = document.getElementById('error');
       
-      // Basic UPC-A format check (must be 12 digits)
       if (!/^\d{12}$/.test(upc)) {
         errorDiv.innerText = "Please enter a valid 12-digit UPC number.";
         errorDiv.style.display = "block";
@@ -202,7 +210,6 @@
         document.getElementById('barcode').style.display = "inline-block";
         return true;
       } catch (err) {
-        // Triggers if checksum validation fails
         errorDiv.innerText = "Invalid UPC checksum number.";
         errorDiv.style.display = "block";
         document.getElementById('barcode').style.display = "none";
@@ -217,12 +224,33 @@
       }
     }
 
+    function handleEmail() {
+      const upc = document.getElementById('upcInput').value.trim();
+      
+      if (!/^\d{12}$/.test(upc)) {
+        alert("Please enter a valid 12-digit UPC barcode first.");
+        return;
+      }
+
+      const recipient = prompt("Enter recipient email address:");
+      if (recipient && recipient.trim() !== '') {
+        const subject = encodeURIComponent(`UPC Barcode Details: ${upc}`);
+        const body = encodeURIComponent(
+          `Hello,\n\nHere are the details for the requested barcode:\n\n` +
+          `UPC Number: ${upc}\n` +
+          `Generator Link: ${window.location.href}\n\n` +
+          `You can view and print this barcode anytime using the link above.`
+        );
+
+        // Opens user's default email program with recipient, subject, and body pre-filled
+        window.location.href = `mailto:${recipient.trim()}?subject=${subject}&body=${body}`;
+      }
+    }
+
     function saveToLocalStorage(upc) {
-      // Add UPC to the beginning of history list (avoid duplicates)
       savedHistory = savedHistory.filter(item => item !== upc);
       savedHistory.unshift(upc);
       
-      // Limit saved items to 10
       if (savedHistory.length > 10) savedHistory.pop();
 
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
@@ -246,10 +274,8 @@
       renderHistory();
     }
 
-    // Startup logic
     window.onload = function() {
       renderHistory();
-      // Load most recent barcode or a default placeholder UPC
       const initialCode = savedHistory.length > 0 ? savedHistory[0] : '012345678905';
       document.getElementById('upcInput').value = initialCode;
       generateBarcode(initialCode);

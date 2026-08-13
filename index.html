@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UPC Barcode Generator</title>
+  <title>UPC Barcode Generator & Scanner</title>
   
   <!-- JsBarcode CDN Library -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <!-- Html5-QRCode Scanner CDN Library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   
   <style>
     body {
@@ -27,15 +29,19 @@
       max-width: 520px;
       width: 100%;
       text-align: center;
+      position: relative;
     }
 
-    input {
-      font-size: 16px;
+    input, select {
+      font-size: 15px;
       padding: 10px 14px;
-      width: 200px;
       border: 1px solid #ccc;
       border-radius: 6px;
       outline: none;
+    }
+
+    input {
+      width: 180px;
     }
 
     button {
@@ -51,6 +57,14 @@
 
     button:hover {
       background-color: #0056b3;
+    }
+
+    .purple-btn {
+      background-color: #6f42c1;
+    }
+
+    .purple-btn:hover {
+      background-color: #593196;
     }
 
     .success-btn {
@@ -118,6 +132,33 @@
       padding: 4px 8px;
     }
 
+    /* Scanner Modal Window */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 450px;
+      width: 90%;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    #reader {
+      width: 100%;
+      margin-top: 15px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
     /* PRINT STYLES */
     @media print {
       body {
@@ -146,6 +187,7 @@
     <div class="no-print">
       <input type="text" id="upcInput" placeholder="Enter 12-digit UPC" maxlength="12" />
       <button onclick="handleGenerate()">Generate</button>
+      <button class="purple-btn" onclick="openScanner()">📷 Scan Barcode</button>
       <div id="error" class="error-msg">Please enter a valid 12-digit UPC number.</div>
     </div>
 
@@ -172,8 +214,27 @@
     </div>
   </div>
 
+  <!-- Camera Scanner Modal -->
+  <div id="scannerModal" class="modal-overlay no-print">
+    <div class="modal-content">
+      <h3 style="margin-top: 0;">Scan UPC Barcode</h3>
+      
+      <!-- Camera Selection Dropdown -->
+      <label for="cameraSelect" style="font-size: 14px; font-weight: bold;">Select Camera:</label><br/>
+      <select id="cameraSelect" style="width: 100%; margin-top: 6px;" onchange="changeCamera()"></select>
+      
+      <!-- Camera Viewport -->
+      <div id="reader"></div>
+      
+      <div style="margin-top: 15px; text-align: right;">
+        <button class="danger-btn" onclick="closeScanner()">Close Scanner</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let savedHistory = JSON.parse(localStorage.getItem('my_upc_history')) || [];
+    let html5QrcodeScanner = null;
 
     function renderHistory() {
       const list = document.getElementById('historyList');
@@ -234,21 +295,115 @@
       }
     }
 
-    // Copies image directly to browser clipboard
+    /* BARCODE CAMERA SCANNER FUNCTIONS */
+    async function openScanner() {
+      document.getElementById('scannerModal').style.display = 'flex';
+
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        const select = document.getElementById('cameraSelect');
+        select.innerHTML = '';
+
+        if (devices && devices.length > 0) {
+          devices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.id;
+            option.text = device.label || `Camera ${index + 1}`;
+            select.appendChild(option);
+          });
+
+          // Prefer back/environment camera on mobile devices if found
+          const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
+          const selectedId = backCam ? backCam.id : devices[0].id;
+          select.value = selectedId;
+
+          startScanning(selectedId);
+        } else {
+          alert("No camera detected on your device.");
+          closeScanner();
+        }
+      } catch (err) {
+        alert("Camera permission denied or camera unavailable.");
+        closeScanner();
+      }
+    }
+
+    function startScanning(deviceId) {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.stop().then(() => {
+          initScanner(deviceId);
+        }).catch(() => {
+          initScanner(deviceId);
+        });
+      } else {
+        initScanner(deviceId);
+      }
+    }
+
+    function initScanner(deviceId) {
+      html5QrcodeScanner = new Html5Qrcode("reader");
+      html5QrcodeScanner.start(
+        deviceId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 120 }
+        },
+        (decodedText) => {
+          let upc = decodedText.trim();
+          
+          // Handle EAN-13 codes with a leading 0 converting to 12-digit UPC
+          if (upc.length === 13 && upc.startsWith("0")) {
+            upc = upc.substring(1);
+          }
+
+          // Populate the input field and generate barcode
+          document.getElementById('upcInput').value = upc;
+          if (generateBarcode(upc)) {
+            saveToLocalStorage(upc);
+          }
+
+          closeScanner();
+        },
+        (errorMessage) => {
+          // Continuous frame search errors ignored
+        }
+      ).catch(err => {
+        console.error("Scanning start failed: ", err);
+      });
+    }
+
+    function changeCamera() {
+      const select = document.getElementById('cameraSelect');
+      startScanning(select.value);
+    }
+
+    function closeScanner() {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.stop().then(() => {
+          html5QrcodeScanner.clear();
+          document.getElementById('scannerModal').style.display = 'none';
+        }).catch(() => {
+          document.getElementById('scannerModal').style.display = 'none';
+        });
+      } else {
+        document.getElementById('scannerModal').style.display = 'none';
+      }
+    }
+
+    /* COPY / DOWNLOAD / EMAIL FUNCTIONS */
     async function copyBarcodeImage() {
       const canvas = document.getElementById('barcode');
       try {
         canvas.toBlob(async (blob) => {
           const item = new ClipboardItem({ 'image/png': blob });
           await navigator.clipboard.write([item]);
-          alert('Barcode image copied! You can now paste (Ctrl+V / Cmd+V) directly into your email.');
+          alert('Barcode image copied! You can paste (Ctrl+V) directly into emails.');
         });
       } catch (err) {
-        alert('Your browser does not support direct image copying. Please use the Download PNG button.');
+        alert('Browser does not support direct image copy. Use Download PNG instead.');
       }
     }
 
-    // Downloads the barcode as a PNG file
     function downloadBarcode() {
       const canvas = document.getElementById('barcode');
       const upc = document.getElementById('upcInput').value.trim();
@@ -279,6 +434,7 @@
       }
     }
 
+    /* STORAGE FUNCTIONS */
     function saveToLocalStorage(upc) {
       savedHistory = savedHistory.filter(item => item !== upc);
       savedHistory.unshift(upc);

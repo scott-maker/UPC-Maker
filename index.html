@@ -367,7 +367,7 @@
       </p>
 
       <div style="margin-bottom: 10px;">
-        <textarea id="importTextArea" rows="6" style="width:100%; font-family:monospace;" placeholder="012345678905, Red Apple, 3&#10;098765432104, Green Pear, 5&#10;011111222223, Orange Juice"></textarea>
+        <textarea id="importTextArea" rows="6" style="width:100%; font-family:monospace;" placeholder="012345678905, Red Apple, 1&#10;098765432104, Green Pear, 1&#10;011111222223, Orange Juice"></textarea>
       </div>
 
       <div style="margin-bottom: 15px; display:flex; justify-content:space-between; align-items:center;">
@@ -387,7 +387,7 @@
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 12px;">Print Label Sheet</h3>
 
-      <!-- Template Selector (Default set to Avery 5160 - 30 labels/sheet) -->
+      <!-- Template Selector -->
       <div style="margin-bottom: 15px; background: #f1f3f5; padding: 10px; border-radius: 6px;">
         <label style="font-size:13px; font-weight:bold;">Select Label Template:</label><br/>
         <select id="averyTemplateSelect" style="width:100%; margin-top:4px;" onchange="onTemplateChange()">
@@ -420,7 +420,7 @@
           </div>
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Label Quantity:</label><br/>
-            <input type="number" id="averyQuantity" min="1" max="30" value="30" style="width:100%; margin-top:4px;" />
+            <input type="number" id="averyQuantity" min="1" max="300" value="1" style="width:100%; margin-top:4px;" />
           </div>
         </div>
       </div>
@@ -445,7 +445,7 @@
             <tbody id="batchHistoryTableBody"></tbody>
           </table>
         </div>
-        <p id="capacityHelpText" style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 30 labels.</p>
+        <p id="capacityHelpText" style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 30 labels per page.</p>
       </div>
 
       <div style="text-align: right; margin-top: 15px;">
@@ -596,7 +596,6 @@
 
         if (isNaN(qty) || qty < 0) qty = 1;
 
-        // Clean nondigits and auto-pad Excel stripped leading zeros
         let digits = rawUpc.replace(/\D/g, '');
         if (digits.length > 0 && digits.length <= 12) {
           digits = digits.padStart(12, '0');
@@ -606,7 +605,7 @@
 
         if (/^\d{12}$/.test(digits)) {
           saveToLocalStorage(digits, itemName);
-          importedBatchMap[digits] = (importedBatchMap[digits] || 0) + qty;
+          importedBatchMap[digits] = qty;
           validCount++;
         }
       });
@@ -653,14 +652,10 @@
       const maxCells = template === '6525' ? 10 : 30;
 
       const startCell = document.getElementById('averyStartCell');
-      const quantity = document.getElementById('averyQuantity');
       const batchStartCell = document.getElementById('averyBatchStartCell');
 
       startCell.max = maxCells;
       if (parseInt(startCell.value) > maxCells) startCell.value = 1;
-
-      quantity.max = maxCells;
-      quantity.value = maxCells;
 
       batchStartCell.max = maxCells;
       if (parseInt(batchStartCell.value) > maxCells) batchStartCell.value = 1;
@@ -706,7 +701,8 @@
         const name = (typeof item === 'object' && item.name) ? item.name : '';
         const label = name ? `<strong>${name}</strong><br/><small style="color:#666">${code}</small>` : `<strong>${code}</strong>`;
         
-        const initialQty = importedBatchMap[code] !== undefined ? importedBatchMap[code] : 0;
+        // Defaults to 1 copy for every history item unless specified by batch import
+        const initialQty = importedBatchMap[code] !== undefined ? importedBatchMap[code] : 1;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -749,7 +745,7 @@
         const upc = typeof item === 'object' ? item.upc : item;
         const title = document.getElementById('averyItemTitle').value.trim();
         startCell = parseInt(document.getElementById('averyStartCell').value, 10) || 1;
-        const quantity = parseInt(document.getElementById('averyQuantity').value, 10) || maxCells;
+        const quantity = parseInt(document.getElementById('averyQuantity').value, 10) || 1;
 
         for (let q = 0; q < quantity; q++) {
           labelQueue.push({ upc: upc, title: title });
@@ -773,7 +769,7 @@
         });
 
         if (labelQueue.length === 0) {
-          alert("Please set a quantity for at least one item in the table.");
+          alert("Please set a quantity of at least 1 for at least one item.");
           return;
         }
       }
@@ -782,7 +778,6 @@
       let pageNum = 0;
       let globalCellIndex = 0;
 
-      // Loop and construct multiple pages if label queue exceeds 1 sheet
       while (queueIdx < labelQueue.length) {
         pageNum++;
         const sheetPage = document.createElement('div');
@@ -817,24 +812,30 @@
         printArea.appendChild(sheetPage);
       }
 
-      // Render barcode vector images into created SVGs
       const barcodeConfig = template === '6525' 
         ? { format: "UPC", width: 1.8, height: 60, fontSize: 13, margin: 0 }
         : { format: "UPC", width: 1.3, height: 32, fontSize: 9, margin: 0 };
 
       for (let k = 1; k <= globalCellIndex; k++) {
         const itemData = labelQueue[k - 1];
-        JsBarcode(`#avery-svg-${k}`, itemData.upc, barcodeConfig);
+        try {
+          JsBarcode(`#avery-svg-${k}`, itemData.upc, barcodeConfig);
+        } catch (e) {
+          console.warn("JsBarcode render skipped for UPC:", itemData.upc, e);
+        }
       }
 
       closeAveryModal();
 
       document.body.classList.add('printing-avery');
-      window.print();
 
+      // Delay execution slightly to ensure browser DOM layout finishes rendering SVG elements before triggering print
       setTimeout(() => {
-        document.body.classList.remove('printing-avery');
-      }, 1000);
+        window.print();
+        setTimeout(() => {
+          document.body.classList.remove('printing-avery');
+        }, 500);
+      }, 150);
     }
 
     /* CAMERA SCANNER FUNCTIONS */
@@ -1005,4 +1006,4 @@
     };
   </script>
 </body>
-</html>
+  </html>

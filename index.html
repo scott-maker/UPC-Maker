@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UPC Barcode Generator & 2" x 3.5" Label Printer</title>
+  <title>UPC Barcode Generator & Multi-Template Label Printer</title>
   
   <!-- JsBarcode CDN Library -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -189,12 +189,12 @@
       text-align: left;
     }
 
-    /* 2" x 3.5" LABEL PRINT SHEET SPECIFICATIONS (10 per sheet: 2 cols x 5 rows) */
     #averyPrintArea {
       display: none;
     }
 
-    .avery-2x35-sheet {
+    /* AVERY 6525 SHEET (2" x 3.5" - 10 per sheet: 2 cols x 5 rows) */
+    .avery-6525-sheet {
       width: 8.5in;
       height: 11in;
       padding-top: 0.5in;
@@ -210,7 +210,7 @@
       background: white;
     }
 
-    .avery-label {
+    .avery-6525-sheet .avery-label {
       width: 3.5in;
       height: 2.0in;
       box-sizing: border-box;
@@ -223,7 +223,7 @@
       text-align: center;
     }
 
-    .avery-label .label-title {
+    .avery-6525-sheet .label-title {
       font-size: 11pt;
       font-weight: bold;
       margin-bottom: 4px;
@@ -233,9 +233,53 @@
       max-width: 3.2in;
     }
 
-    .avery-label svg {
+    .avery-6525-sheet svg {
       max-width: 3.2in;
       max-height: 1.4in;
+    }
+
+    /* AVERY 5160 / 95318 SHEET (1" x 2.625" - 30 per sheet: 3 cols x 10 rows) */
+    .avery-5160-sheet {
+      width: 8.5in;
+      height: 11in;
+      padding-top: 0.5in;
+      padding-left: 0.1875in;
+      padding-right: 0.1875in;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-columns: repeat(3, 2.625in);
+      grid-template-rows: repeat(10, 1.0in);
+      column-gap: 0.125in;
+      row-gap: 0in;
+      background: white;
+    }
+
+    .avery-5160-sheet .avery-label {
+      width: 2.625in;
+      height: 1.0in;
+      box-sizing: border-box;
+      padding: 0.04in 0.08in;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .avery-5160-sheet .label-title {
+      font-size: 7.5pt;
+      font-weight: bold;
+      margin-bottom: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 2.4in;
+    }
+
+    .avery-5160-sheet svg {
+      max-width: 2.4in;
+      max-height: 0.68in;
     }
 
     /* PRINT STYLES */
@@ -292,7 +336,7 @@
     <!-- Action Buttons -->
     <div class="no-print">
       <button onclick="window.print()">🖨️ Print Single</button>
-      <button class="warning-btn" onclick="openAveryModal()">🏷️ 2" x 3.5" Sheet</button>
+      <button class="warning-btn" onclick="openAveryModal()">🏷️ Print Label Sheet</button>
       <button class="secondary-btn" onclick="copyBarcodeImage()">📋 Copy</button>
       <button class="secondary-btn" onclick="downloadBarcode()">💾 Download</button>
       <button class="success-btn" onclick="handleEmail()">✉️ Email</button>
@@ -308,13 +352,19 @@
     </div>
   </div>
 
-  <!-- 2" x 3.5" Print Setup Modal -->
+  <!-- Print Sheet Setup Modal -->
   <div id="averyModal" class="modal-overlay no-print">
     <div class="modal-content">
-      <h3 style="margin-top:0; margin-bottom: 5px;">Print 2" x 3.5" Label Sheet</h3>
-      <p style="font-size:12px; color:#666; margin-top:0; margin-bottom:15px;">
-        Fits standard 2" x 3.5" labels (10 labels per sheet - 2 cols x 5 rows)
-      </p>
+      <h3 style="margin-top:0; margin-bottom: 12px;">Print Label Sheet</h3>
+
+      <!-- Template Selector -->
+      <div style="margin-bottom: 15px; background: #f1f3f5; padding: 10px; border-radius: 6px;">
+        <label style="font-size:13px; font-weight:bold;">Select Label Template:</label><br/>
+        <select id="averyTemplateSelect" style="width:100%; margin-top:4px;" onchange="onTemplateChange()">
+          <option value="6525">Avery 6525 (2" x 3.5" — 10 Labels/Sheet)</option>
+          <option value="5160">Avery 5160 / 95318 (1" x 2.625" — 30 Labels/Sheet)</option>
+        </select>
+      </div>
 
       <div class="tab-bar">
         <button id="tabSingleBtn" class="tab-btn active" onclick="switchAveryTab('single')">Single UPC</button>
@@ -335,7 +385,7 @@
 
         <div style="display:flex; gap:10px; margin-bottom: 20px;">
           <div style="flex:1;">
-            <label style="font-size:13px; font-weight:bold;">Start Position (1-10):</label><br/>
+            <label style="font-size:13px; font-weight:bold;">Start Position:</label><br/>
             <input type="number" id="averyStartCell" min="1" max="10" value="1" style="width:100%; margin-top:4px;" />
           </div>
           <div style="flex:1;">
@@ -348,7 +398,7 @@
       <!-- Batch / Mix from History Mode -->
       <div id="averyBatchTab" style="display:none;">
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
-          <label style="font-size:13px; font-weight:bold;">Select Quantities per History Item:</label>
+          <label style="font-size:13px; font-weight:bold;">Quantities per History Item:</label>
           <span style="font-size:12px; color:#666;">Start Cell: 
             <input type="number" id="averyBatchStartCell" min="1" max="10" value="1" style="width:50px; padding:3px 6px;" />
           </span>
@@ -365,7 +415,7 @@
             <tbody id="batchHistoryTableBody"></tbody>
           </table>
         </div>
-        <p style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 10 labels.</p>
+        <p id="capacityHelpText" style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 10 labels.</p>
       </div>
 
       <div style="text-align: right; margin-top: 15px;">
@@ -390,7 +440,7 @@
 
   <!-- Printable Label Sheet Container -->
   <div id="averyPrintArea">
-    <div id="averySheet" class="avery-2x35-sheet"></div>
+    <div id="averySheet"></div>
   </div>
 
   <script>
@@ -472,7 +522,7 @@
       }
     }
 
-    /* PRINT MANAGER & HISTORY POPULATION FOR 2" x 3.5" LABELS */
+    /* PRINT MANAGER & TEMPLATE SWITCHING */
     function openAveryModal() {
       if (savedHistory.length === 0) {
         const currentUpc = document.getElementById('upcInput').value.trim();
@@ -487,7 +537,34 @@
 
       populateAveryHistoryOptions();
       populateAveryBatchTable();
+      onTemplateChange();
       document.getElementById('averyModal').style.display = 'flex';
+    }
+
+    function onTemplateChange() {
+      const template = document.getElementById('averyTemplateSelect').value;
+      const maxCells = template === '6525' ? 10 : 30;
+
+      // Update Max and Default Values for selected Template
+      const startCell = document.getElementById('averyStartCell');
+      const quantity = document.getElementById('averyQuantity');
+      const batchStartCell = document.getElementById('averyBatchStartCell');
+
+      startCell.max = maxCells;
+      if (parseInt(startCell.value) > maxCells) startCell.value = 1;
+
+      quantity.max = maxCells;
+      quantity.value = maxCells;
+
+      batchStartCell.max = maxCells;
+      if (parseInt(batchStartCell.value) > maxCells) batchStartCell.value = 1;
+
+      document.getElementById('capacityHelpText').innerText = `Total sheet capacity: ${maxCells} labels.`;
+
+      // Update max attribute on batch inputs
+      document.querySelectorAll('.batch-qty-input').forEach(input => {
+        input.max = maxCells;
+      });
     }
 
     function populateAveryHistoryOptions() {
@@ -532,7 +609,7 @@
         tr.innerHTML = `
           <td>${label}</td>
           <td style="text-align: center;">
-            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" max="10" value="0" style="width: 55px; padding: 2px 4px; text-align: center;" />
+            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" max="30" value="0" style="width: 55px; padding: 2px 4px; text-align: center;" />
           </td>
         `;
         tbody.appendChild(tr);
@@ -552,7 +629,11 @@
     }
 
     function printAverySheet() {
+      const template = document.getElementById('averyTemplateSelect').value;
+      const maxCells = template === '6525' ? 10 : 30;
+      
       const sheetContainer = document.getElementById('averySheet');
+      sheetContainer.className = template === '6525' ? 'avery-6525-sheet' : 'avery-5160-sheet';
       sheetContainer.innerHTML = '';
 
       let labelQueue = [];
@@ -565,7 +646,7 @@
         const upc = typeof item === 'object' ? item.upc : item;
         const title = document.getElementById('averyItemTitle').value.trim();
         startCell = parseInt(document.getElementById('averyStartCell').value, 10) || 1;
-        const quantity = parseInt(document.getElementById('averyQuantity').value, 10) || 10;
+        const quantity = parseInt(document.getElementById('averyQuantity').value, 10) || maxCells;
 
         for (let q = 0; q < quantity; q++) {
           labelQueue.push({ upc: upc, title: title });
@@ -594,11 +675,11 @@
         }
       }
 
-      const startIndex = Math.max(1, Math.min(10, startCell)) - 1;
+      const startIndex = Math.max(1, Math.min(maxCells, startCell)) - 1;
       let queueIdx = 0;
 
-      // Build 10 grid cells for 2" x 3.5" sheet (2 columns x 5 rows)
-      for (let i = 0; i < 10; i++) {
+      // Render cells according to selected template
+      for (let i = 0; i < maxCells; i++) {
         const labelDiv = document.createElement('div');
         labelDiv.className = 'avery-label';
 
@@ -617,14 +698,12 @@
           labelDiv.appendChild(svg);
           sheetContainer.appendChild(labelDiv);
 
-          // Larger barcode rendering optimized for 2" x 3.5" card sizes
-          JsBarcode(`#avery-svg-${i}`, itemData.upc, {
-            format: "UPC",
-            width: 1.8,
-            height: 60,
-            fontSize: 13,
-            margin: 0
-          });
+          // Customize barcode parameters based on label dimensions
+          const barcodeConfig = template === '6525' 
+            ? { format: "UPC", width: 1.8, height: 60, fontSize: 13, margin: 0 }
+            : { format: "UPC", width: 1.3, height: 32, fontSize: 9, margin: 0 };
+
+          JsBarcode(`#avery-svg-${i}`, itemData.upc, barcodeConfig);
         } else {
           sheetContainer.appendChild(labelDiv); // Blank cell
         }

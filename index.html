@@ -208,6 +208,8 @@
       column-gap: 0in;
       row-gap: 0in;
       background: white;
+      page-break-after: always;
+      break-after: page;
     }
 
     .avery-6525-sheet .avery-label {
@@ -252,6 +254,8 @@
       column-gap: 0.125in;
       row-gap: 0in;
       background: white;
+      page-break-after: always;
+      break-after: page;
     }
 
     .avery-5160-sheet .avery-label {
@@ -383,12 +387,12 @@
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 12px;">Print Label Sheet</h3>
 
-      <!-- Template Selector -->
+      <!-- Template Selector (Default set to Avery 5160 - 30 labels/sheet) -->
       <div style="margin-bottom: 15px; background: #f1f3f5; padding: 10px; border-radius: 6px;">
         <label style="font-size:13px; font-weight:bold;">Select Label Template:</label><br/>
         <select id="averyTemplateSelect" style="width:100%; margin-top:4px;" onchange="onTemplateChange()">
+          <option value="5160" selected>Avery 5160 / 95318 (1" x 2.625" — 30 Labels/Sheet)</option>
           <option value="6525">Business Cards/Labels (2" x 3.5" — 10 Labels/Sheet)</option>
-          <option value="5160">Avery 5160 / 95318 (1" x 2.625" — 30 Labels/Sheet)</option>
         </select>
       </div>
 
@@ -412,11 +416,11 @@
         <div style="display:flex; gap:10px; margin-bottom: 20px;">
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Start Position:</label><br/>
-            <input type="number" id="averyStartCell" min="1" max="10" value="1" style="width:100%; margin-top:4px;" />
+            <input type="number" id="averyStartCell" min="1" max="30" value="1" style="width:100%; margin-top:4px;" />
           </div>
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Label Quantity:</label><br/>
-            <input type="number" id="averyQuantity" min="1" max="10" value="10" style="width:100%; margin-top:4px;" />
+            <input type="number" id="averyQuantity" min="1" max="30" value="30" style="width:100%; margin-top:4px;" />
           </div>
         </div>
       </div>
@@ -426,7 +430,7 @@
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
           <label style="font-size:13px; font-weight:bold;">Quantities per History Item:</label>
           <span style="font-size:12px; color:#666;">Start Cell: 
-            <input type="number" id="averyBatchStartCell" min="1" max="10" value="1" style="width:50px; padding:3px 6px;" />
+            <input type="number" id="averyBatchStartCell" min="1" max="30" value="1" style="width:50px; padding:3px 6px;" />
           </span>
         </div>
 
@@ -441,7 +445,7 @@
             <tbody id="batchHistoryTableBody"></tbody>
           </table>
         </div>
-        <p id="capacityHelpText" style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 10 labels.</p>
+        <p id="capacityHelpText" style="font-size:11px; color:#888; margin-top:6px;">Total sheet capacity: 30 labels.</p>
       </div>
 
       <div style="text-align: right; margin-top: 15px;">
@@ -465,15 +469,13 @@
   </div>
 
   <!-- Printable Label Sheet Container -->
-  <div id="averyPrintArea">
-    <div id="averySheet"></div>
-  </div>
+  <div id="averyPrintArea"></div>
 
   <script>
     let savedHistory = JSON.parse(localStorage.getItem('my_upc_history')) || [];
     let html5QrcodeScanner = null;
     let currentAveryTab = 'single';
-    let importedBatchMap = {}; // Stores temporary quantities from CSV imports
+    let importedBatchMap = {}; 
 
     function renderHistory() {
       const list = document.getElementById('historyList');
@@ -586,40 +588,38 @@
         const cleanLine = line.trim();
         if (!cleanLine) return;
 
-        // Split line by comma or tab
         const parts = cleanLine.split(/,|\t/).map(p => p.trim().replace(/^["']|["']$/g, ''));
         
-        let upc = parts[0] || '';
+        let rawUpc = parts[0] || '';
         let itemName = parts[1] || '';
         let qty = parseInt(parts[2] || '1', 10);
 
         if (isNaN(qty) || qty < 0) qty = 1;
 
-        // Handle 13-digit EAN with leading zero
-        if (upc.length === 13 && upc.startsWith("0")) {
-          upc = upc.substring(1);
+        // Clean nondigits and auto-pad Excel stripped leading zeros
+        let digits = rawUpc.replace(/\D/g, '');
+        if (digits.length > 0 && digits.length <= 12) {
+          digits = digits.padStart(12, '0');
+        } else if (digits.length === 13 && digits.startsWith('0')) {
+          digits = digits.substring(1);
         }
 
-        // Validate 12-digit UPC format
-        if (/^\d{12}$/.test(upc)) {
-          saveToLocalStorage(upc, itemName);
-          importedBatchMap[upc] = qty;
+        if (/^\d{12}$/.test(digits)) {
+          saveToLocalStorage(digits, itemName);
+          importedBatchMap[digits] = (importedBatchMap[digits] || 0) + qty;
           validCount++;
         }
       });
 
       if (validCount === 0) {
-        alert("No valid 12-digit UPC codes were found in your input.");
+        alert("No valid UPC codes were found in your input. Ensure lines contain numerical UPCs.");
         return;
       }
 
       closeImportModal();
-      
-      // Auto-open print modal and switch to batch mode with pre-filled quantities
       openAveryModal();
       switchAveryTab('batch');
       
-      // Load the most recent imported code into main canvas preview
       const firstImportedUpc = Object.keys(importedBatchMap)[0];
       const match = savedHistory.find(i => (typeof i === 'object' ? i.upc : i) === firstImportedUpc);
       if (match) {
@@ -665,11 +665,7 @@
       batchStartCell.max = maxCells;
       if (parseInt(batchStartCell.value) > maxCells) batchStartCell.value = 1;
 
-      document.getElementById('capacityHelpText').innerText = `Total sheet capacity: ${maxCells} labels.`;
-
-      document.querySelectorAll('.batch-qty-input').forEach(input => {
-        input.max = maxCells;
-      });
+      document.getElementById('capacityHelpText').innerText = `Total sheet capacity: ${maxCells} labels per page.`;
     }
 
     function populateAveryHistoryOptions() {
@@ -710,14 +706,13 @@
         const name = (typeof item === 'object' && item.name) ? item.name : '';
         const label = name ? `<strong>${name}</strong><br/><small style="color:#666">${code}</small>` : `<strong>${code}</strong>`;
         
-        // Use imported batch qty if available, otherwise default to 0
         const initialQty = importedBatchMap[code] !== undefined ? importedBatchMap[code] : 0;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${label}</td>
           <td style="text-align: center;">
-            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" max="30" value="${initialQty}" style="width: 55px; padding: 2px 4px; text-align: center;" />
+            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" value="${initialQty}" style="width: 55px; padding: 2px 4px; text-align: center;" />
           </td>
         `;
         tbody.appendChild(tr);
@@ -736,13 +731,13 @@
       document.getElementById('averyModal').style.display = 'none';
     }
 
+    /* MULTI-PAGE AVERY PRINT GENERATOR */
     function printAverySheet() {
       const template = document.getElementById('averyTemplateSelect').value;
       const maxCells = template === '6525' ? 10 : 30;
       
-      const sheetContainer = document.getElementById('averySheet');
-      sheetContainer.className = template === '6525' ? 'avery-6525-sheet' : 'avery-5160-sheet';
-      sheetContainer.innerHTML = '';
+      const printArea = document.getElementById('averyPrintArea');
+      printArea.innerHTML = '';
 
       let labelQueue = [];
       let startCell = 1;
@@ -760,7 +755,7 @@
           labelQueue.push({ upc: upc, title: title });
         }
       } else {
-        // Batch mode from history
+        // Batch mode from history/import
         startCell = parseInt(document.getElementById('averyBatchStartCell').value, 10) || 1;
         const inputs = document.querySelectorAll('.batch-qty-input');
 
@@ -783,37 +778,53 @@
         }
       }
 
-      const startIndex = Math.max(1, Math.min(maxCells, startCell)) - 1;
       let queueIdx = 0;
+      let pageNum = 0;
+      let globalCellIndex = 0;
 
-      // Render cells according to selected template
-      for (let i = 0; i < maxCells; i++) {
-        const labelDiv = document.createElement('div');
-        labelDiv.className = 'avery-label';
+      // Loop and construct multiple pages if label queue exceeds 1 sheet
+      while (queueIdx < labelQueue.length) {
+        pageNum++;
+        const sheetPage = document.createElement('div');
+        sheetPage.className = template === '6525' ? 'avery-6525-sheet' : 'avery-5160-sheet';
 
-        if (i >= startIndex && queueIdx < labelQueue.length) {
-          const itemData = labelQueue[queueIdx];
-          queueIdx++;
+        const pageStartIndex = (pageNum === 1) ? Math.max(1, Math.min(maxCells, startCell)) - 1 : 0;
 
-          const titleDiv = document.createElement('div');
-          titleDiv.className = 'label-title';
-          titleDiv.innerText = itemData.title;
+        for (let cellInPage = 0; cellInPage < maxCells; cellInPage++) {
+          const labelDiv = document.createElement('div');
+          labelDiv.className = 'avery-label';
 
-          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          svg.id = `avery-svg-${i}`;
+          if (cellInPage >= pageStartIndex && queueIdx < labelQueue.length) {
+            const itemData = labelQueue[queueIdx];
+            queueIdx++;
+            globalCellIndex++;
 
-          labelDiv.appendChild(titleDiv);
-          labelDiv.appendChild(svg);
-          sheetContainer.appendChild(labelDiv);
+            const titleDiv = document.createElement('div');
+            titleDiv.className = 'label-title';
+            titleDiv.innerText = itemData.title;
 
-          const barcodeConfig = template === '6525' 
-            ? { format: "UPC", width: 1.8, height: 60, fontSize: 13, margin: 0 }
-            : { format: "UPC", width: 1.3, height: 32, fontSize: 9, margin: 0 };
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.id = `avery-svg-${globalCellIndex}`;
 
-          JsBarcode(`#avery-svg-${i}`, itemData.upc, barcodeConfig);
-        } else {
-          sheetContainer.appendChild(labelDiv);
+            labelDiv.appendChild(titleDiv);
+            labelDiv.appendChild(svg);
+            sheetPage.appendChild(labelDiv);
+          } else {
+            sheetPage.appendChild(labelDiv);
+          }
         }
+
+        printArea.appendChild(sheetPage);
+      }
+
+      // Render barcode vector images into created SVGs
+      const barcodeConfig = template === '6525' 
+        ? { format: "UPC", width: 1.8, height: 60, fontSize: 13, margin: 0 }
+        : { format: "UPC", width: 1.3, height: 32, fontSize: 9, margin: 0 };
+
+      for (let k = 1; k <= globalCellIndex; k++) {
+        const itemData = labelQueue[k - 1];
+        JsBarcode(`#avery-svg-${k}`, itemData.upc, barcodeConfig);
       }
 
       closeAveryModal();
@@ -958,7 +969,7 @@
     function saveToLocalStorage(upc, itemName) {
       savedHistory = savedHistory.filter(item => (typeof item === 'object' ? item.upc : item) !== upc);
       savedHistory.unshift({ upc: upc, name: itemName });
-      if (savedHistory.length > 30) savedHistory.pop();
+      if (savedHistory.length > 100) savedHistory.pop();
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
       renderHistory();
     }

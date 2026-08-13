@@ -24,7 +24,7 @@
       padding: 30px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      max-width: 500px;
+      max-width: 520px;
       width: 100%;
       text-align: center;
     }
@@ -39,8 +39,8 @@
     }
 
     button {
-      font-size: 16px;
-      padding: 10px 16px;
+      font-size: 14px;
+      padding: 10px 14px;
       background-color: #007bff;
       color: white;
       border: none;
@@ -59,6 +59,14 @@
 
     .success-btn:hover {
       background-color: #218838;
+    }
+
+    .secondary-btn {
+      background-color: #17a2b8;
+    }
+
+    .secondary-btn:hover {
+      background-color: #138496;
     }
 
     .danger-btn {
@@ -110,7 +118,7 @@
       padding: 4px 8px;
     }
 
-    /* PRINT STYLES: Hides UI controls so only the barcode prints */
+    /* PRINT STYLES */
     @media print {
       body {
         background: white;
@@ -143,13 +151,15 @@
 
     <!-- Barcode Render Area -->
     <div class="barcode-container">
-      <svg id="barcode"></svg>
+      <canvas id="barcode"></canvas>
     </div>
 
     <!-- Action Buttons -->
     <div class="no-print">
-      <button onclick="window.print()">🖨️ Print Barcode</button>
-      <button class="success-btn" onclick="handleEmail()">✉️ Email Barcode</button>
+      <button onclick="window.print()">🖨️ Print</button>
+      <button class="secondary-btn" onclick="copyBarcodeImage()">📋 Copy Image</button>
+      <button class="secondary-btn" onclick="downloadBarcode()">💾 Download PNG</button>
+      <button class="success-btn" onclick="handleEmail()">✉️ Email Details</button>
     </div>
 
     <!-- LocalStorage Saved History -->
@@ -224,6 +234,30 @@
       }
     }
 
+    // Copies image directly to browser clipboard
+    async function copyBarcodeImage() {
+      const canvas = document.getElementById('barcode');
+      try {
+        canvas.toBlob(async (blob) => {
+          const item = new ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          alert('Barcode image copied! You can now paste (Ctrl+V / Cmd+V) directly into your email.');
+        });
+      } catch (err) {
+        alert('Your browser does not support direct image copying. Please use the Download PNG button.');
+      }
+    }
+
+    // Downloads the barcode as a PNG file
+    function downloadBarcode() {
+      const canvas = document.getElementById('barcode');
+      const upc = document.getElementById('upcInput').value.trim();
+      const link = document.createElement('a');
+      link.download = `UPC-${upc}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
     function handleEmail() {
       const upc = document.getElementById('upcInput').value.trim();
       
@@ -236,13 +270,11 @@
       if (recipient && recipient.trim() !== '') {
         const subject = encodeURIComponent(`UPC Barcode Details: ${upc}`);
         const body = encodeURIComponent(
-          `Hello,\n\nHere are the details for the requested barcode:\n\n` +
-          `UPC Number: ${upc}\n` +
-          `Generator Link: ${window.location.href}\n\n` +
-          `You can view and print this barcode anytime using the link above.`
+          `Hello,\n\nHere are the details for UPC ${upc}.\n\n` +
+          `View/Print Barcode: ${window.location.href}\n\n` +
+          `(Note: Use the "Copy Image" button on the webpage to paste the image directly into your email body).`
         );
 
-        // Opens user's default email program with recipient, subject, and body pre-filled
         window.location.href = `mailto:${recipient.trim()}?subject=${subject}&body=${body}`;
       }
     }
@@ -250,9 +282,7 @@
     function saveToLocalStorage(upc) {
       savedHistory = savedHistory.filter(item => item !== upc);
       savedHistory.unshift(upc);
-      
       if (savedHistory.length > 10) savedHistory.pop();
-
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
       renderHistory();
     }

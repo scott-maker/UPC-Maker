@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UPC Barcode Generator & Multi-Template Label Printer</title>
+  <title>UPC Barcode Generator & Batch Label Printer</title>
   
   <!-- JsBarcode CDN Library -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -39,7 +39,7 @@
       align-items: center;
     }
 
-    input, select {
+    input, select, textarea {
       font-size: 14px;
       padding: 9px 12px;
       border: 1px solid #ccc;
@@ -138,7 +138,7 @@
       background: white;
       padding: 24px;
       border-radius: 12px;
-      max-width: 500px;
+      max-width: 520px;
       width: 90%;
       max-height: 90vh;
       overflow-y: auto;
@@ -323,6 +323,7 @@
       <div>
         <button onclick="handleGenerate()">Generate</button>
         <button class="purple-btn" onclick="openScanner()">📷 Scan Barcode</button>
+        <button class="secondary-btn" onclick="openImportModal()">📥 Import Batch</button>
       </div>
       <div id="error" class="error-msg">Please enter a valid 12-digit UPC number.</div>
     </div>
@@ -349,6 +350,31 @@
         <button class="danger-btn" onclick="clearHistory()" style="font-size: 11px; padding: 4px 8px;">Clear</button>
       </div>
       <ul id="historyList" class="history-list"></ul>
+    </div>
+  </div>
+
+  <!-- Batch CSV/Text Import Modal -->
+  <div id="importModal" class="modal-overlay no-print">
+    <div class="modal-content">
+      <h3 style="margin-top:0; margin-bottom: 6px;">Import Batch UPCs</h3>
+      <p style="font-size:12px; color:#666; margin-top:0; margin-bottom:12px;">
+        Paste your list or CSV lines below in any of these formats:<br/>
+        <code>UPC, Item Description, Quantity</code> or <code>UPC, Item Description</code> or <code>UPC</code>
+      </p>
+
+      <div style="margin-bottom: 10px;">
+        <textarea id="importTextArea" rows="6" style="width:100%; font-family:monospace;" placeholder="012345678905, Red Apple, 3&#10;098765432104, Green Pear, 5&#10;011111222223, Orange Juice"></textarea>
+      </div>
+
+      <div style="margin-bottom: 15px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; color:#666;">Or upload file:</span>
+        <input type="file" id="importFileInput" accept=".csv,.txt" onchange="handleFileUpload(event)" style="font-size:12px;" />
+      </div>
+
+      <div style="text-align: right;">
+        <button class="secondary-btn" onclick="closeImportModal()">Cancel</button>
+        <button class="success-btn" onclick="processImport()">Process & Load to Batch Sheet</button>
+      </div>
     </div>
   </div>
 
@@ -447,6 +473,7 @@
     let savedHistory = JSON.parse(localStorage.getItem('my_upc_history')) || [];
     let html5QrcodeScanner = null;
     let currentAveryTab = 'single';
+    let importedBatchMap = {}; // Stores temporary quantities from CSV imports
 
     function renderHistory() {
       const list = document.getElementById('historyList');
@@ -522,6 +549,86 @@
       }
     }
 
+    /* BATCH IMPORT FUNCTIONS */
+    function openImportModal() {
+      document.getElementById('importModal').style.display = 'flex';
+    }
+
+    function closeImportModal() {
+      document.getElementById('importModal').style.display = 'none';
+      document.getElementById('importTextArea').value = '';
+      document.getElementById('importFileInput').value = '';
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('importTextArea').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+
+    function processImport() {
+      const text = document.getElementById('importTextArea').value.trim();
+      if (!text) {
+        alert("Please paste data or upload a file first.");
+        return;
+      }
+
+      const lines = text.split('\n');
+      let validCount = 0;
+      importedBatchMap = {};
+
+      lines.forEach(line => {
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+
+        // Split line by comma or tab
+        const parts = cleanLine.split(/,|\t/).map(p => p.trim().replace(/^["']|["']$/g, ''));
+        
+        let upc = parts[0] || '';
+        let itemName = parts[1] || '';
+        let qty = parseInt(parts[2] || '1', 10);
+
+        if (isNaN(qty) || qty < 0) qty = 1;
+
+        // Handle 13-digit EAN with leading zero
+        if (upc.length === 13 && upc.startsWith("0")) {
+          upc = upc.substring(1);
+        }
+
+        // Validate 12-digit UPC format
+        if (/^\d{12}$/.test(upc)) {
+          saveToLocalStorage(upc, itemName);
+          importedBatchMap[upc] = qty;
+          validCount++;
+        }
+      });
+
+      if (validCount === 0) {
+        alert("No valid 12-digit UPC codes were found in your input.");
+        return;
+      }
+
+      closeImportModal();
+      
+      // Auto-open print modal and switch to batch mode with pre-filled quantities
+      openAveryModal();
+      switchAveryTab('batch');
+      
+      // Load the most recent imported code into main canvas preview
+      const firstImportedUpc = Object.keys(importedBatchMap)[0];
+      const match = savedHistory.find(i => (typeof i === 'object' ? i.upc : i) === firstImportedUpc);
+      if (match) {
+        loadCode(firstImportedUpc, typeof match === 'object' ? match.name : '');
+      }
+
+      alert(`Successfully processed ${validCount} barcode(s) into your batch sheet!`);
+    }
+
     /* PRINT MANAGER & TEMPLATE SWITCHING */
     function openAveryModal() {
       if (savedHistory.length === 0) {
@@ -545,7 +652,6 @@
       const template = document.getElementById('averyTemplateSelect').value;
       const maxCells = template === '6525' ? 10 : 30;
 
-      // Update Max and Default Values for selected Template
       const startCell = document.getElementById('averyStartCell');
       const quantity = document.getElementById('averyQuantity');
       const batchStartCell = document.getElementById('averyBatchStartCell');
@@ -561,7 +667,6 @@
 
       document.getElementById('capacityHelpText').innerText = `Total sheet capacity: ${maxCells} labels.`;
 
-      // Update max attribute on batch inputs
       document.querySelectorAll('.batch-qty-input').forEach(input => {
         input.max = maxCells;
       });
@@ -604,12 +709,15 @@
         const code = typeof item === 'object' ? item.upc : item;
         const name = (typeof item === 'object' && item.name) ? item.name : '';
         const label = name ? `<strong>${name}</strong><br/><small style="color:#666">${code}</small>` : `<strong>${code}</strong>`;
+        
+        // Use imported batch qty if available, otherwise default to 0
+        const initialQty = importedBatchMap[code] !== undefined ? importedBatchMap[code] : 0;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${label}</td>
           <td style="text-align: center;">
-            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" max="30" value="0" style="width: 55px; padding: 2px 4px; text-align: center;" />
+            <input type="number" class="batch-qty-input" data-idx="${idx}" min="0" max="30" value="${initialQty}" style="width: 55px; padding: 2px 4px; text-align: center;" />
           </td>
         `;
         tbody.appendChild(tr);
@@ -698,14 +806,13 @@
           labelDiv.appendChild(svg);
           sheetContainer.appendChild(labelDiv);
 
-          // Customize barcode parameters based on label dimensions
           const barcodeConfig = template === '6525' 
             ? { format: "UPC", width: 1.8, height: 60, fontSize: 13, margin: 0 }
             : { format: "UPC", width: 1.3, height: 32, fontSize: 9, margin: 0 };
 
           JsBarcode(`#avery-svg-${i}`, itemData.upc, barcodeConfig);
         } else {
-          sheetContainer.appendChild(labelDiv); // Blank cell
+          sheetContainer.appendChild(labelDiv);
         }
       }
 
@@ -851,7 +958,7 @@
     function saveToLocalStorage(upc, itemName) {
       savedHistory = savedHistory.filter(item => (typeof item === 'object' ? item.upc : item) !== upc);
       savedHistory.unshift({ upc: upc, name: itemName });
-      if (savedHistory.length > 20) savedHistory.pop();
+      if (savedHistory.length > 30) savedHistory.pop();
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
       renderHistory();
     }
@@ -870,6 +977,7 @@
 
     function clearHistory() {
       savedHistory = [];
+      importedBatchMap = {};
       localStorage.removeItem('my_upc_history');
       renderHistory();
     }

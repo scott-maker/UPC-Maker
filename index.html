@@ -66,7 +66,6 @@
 
     button:hover { background-color: #0056b3; }
 
-    /* GRAYED OUT / DISABLED BUTTON STYLES */
     button:disabled {
       opacity: 0.4 !important;
       cursor: not-allowed !important;
@@ -106,7 +105,6 @@
       display: none;
     }
 
-    /* History Section */
     .history-section {
       margin-top: 30px;
       text-align: left;
@@ -134,7 +132,6 @@
       padding: 4px 8px;
     }
 
-    /* Modals */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -203,7 +200,7 @@
       display: none;
     }
 
-    /* BUSINESS CARDS / LABELS SHEET (2" x 3.5" - 10 per sheet: 2 cols x 5 rows) */
+    /* BUSINESS CARDS / LABELS SHEET (2" x 3.5" - 10 per sheet) */
     .avery-6525-sheet {
       width: 8.5in;
       height: 11in;
@@ -250,7 +247,7 @@
       max-height: 1.4in;
     }
 
-    /* AVERY 5160 / 95318 SHEET (1" x 2.625" - 30 per sheet: 3 cols x 10 rows) */
+    /* AVERY 5160 / 95318 SHEET (1" x 2.625" - 30 per sheet) */
     .avery-5160-sheet {
       width: 8.5in;
       height: 11in;
@@ -296,7 +293,6 @@
       max-height: 0.68in;
     }
 
-    /* PRINT STYLES */
     @media print {
       @page {
         size: letter;
@@ -325,7 +321,6 @@
 </head>
 <body>
 
-  <!-- Main Application Card -->
   <div class="card">
     <h2 class="no-print" style="margin-top:0;">UPC Barcode Generator</h2>
     
@@ -342,13 +337,11 @@
       <div id="error" class="error-msg">Please enter a valid 12-digit UPC number.</div>
     </div>
 
-    <!-- Barcode Render Area -->
     <div class="barcode-container">
       <div id="itemTitleDisplay" class="item-title-preview"></div>
       <canvas id="barcode"></canvas>
     </div>
 
-    <!-- Action Buttons -->
     <div class="no-print">
       <button id="mainPrintSingleBtn" onclick="window.print()">🖨️ Print Single</button>
       <button id="mainPrintSheetBtn" class="warning-btn" onclick="openAveryModal()">🏷️ Print Label Sheet</button>
@@ -357,7 +350,6 @@
       <button class="success-btn" onclick="handleEmail()">✉️ Email</button>
     </div>
 
-    <!-- LocalStorage Saved History -->
     <div class="history-section no-print">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="margin: 0;">Recent Barcodes</h4>
@@ -367,7 +359,6 @@
     </div>
   </div>
 
-  <!-- Batch CSV/Text Import Modal -->
   <div id="importModal" class="modal-overlay no-print">
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 6px;">Import Batch UPCs</h3>
@@ -392,7 +383,6 @@
     </div>
   </div>
 
-  <!-- Print Sheet Setup Modal -->
   <div id="averyModal" class="modal-overlay no-print">
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 12px;">Print Label Sheet</h3>
@@ -410,7 +400,6 @@
         <button id="tabBatchBtn" class="tab-btn" onclick="switchAveryTab('batch')">Mix & Match from History</button>
       </div>
 
-      <!-- Single UPC Mode -->
       <div id="averySingleTab">
         <div style="margin-bottom: 12px;">
           <label style="font-size:13px; font-weight:bold;">Select UPC from History / Current:</label><br/>
@@ -429,12 +418,11 @@
           </div>
           <div style="flex:1;">
             <label style="font-size:13px; font-weight:bold;">Label Quantity:</label><br/>
-            <input type="number" id="averyQuantity" min="1" max="300" value="1" style="width:100%; margin-top:4px;" oninput="checkPrintReady()" />
+            <input type="number" id="averyQuantity" min="1" max="2000" value="1" style="width:100%; margin-top:4px;" oninput="checkPrintReady()" />
           </div>
         </div>
       </div>
 
-      <!-- Batch / Mix from History Mode -->
       <div id="averyBatchTab" style="display:none;">
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
           <label style="font-size:13px; font-weight:bold;">Quantities per History Item:</label>
@@ -443,7 +431,7 @@
           </span>
         </div>
 
-        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px;">
+        <div style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px;">
           <table class="batch-table">
             <thead>
               <tr>
@@ -464,7 +452,6 @@
     </div>
   </div>
 
-  <!-- Camera Scanner Modal -->
   <div id="scannerModal" class="modal-overlay no-print">
     <div class="modal-content">
       <h3 style="margin-top: 0;">Scan UPC Barcode</h3>
@@ -477,7 +464,6 @@
     </div>
   </div>
 
-  <!-- Printable Label Sheet Container -->
   <div id="averyPrintArea"></div>
 
   <script>
@@ -486,35 +472,29 @@
     let currentAveryTab = 'single';
     let importedBatchMap = {}; 
 
-    /* NORMALIZE & REPAIR UPC CHECKSUMS AUTOMATICALLY */
     function normalizeUPC(rawInput) {
       let digits = (rawInput || '').toString().replace(/\D/g, '');
       
-      // Handle 13-digit EAN starting with 0
       if (digits.length === 13 && digits.startsWith('0')) {
         digits = digits.substring(1);
       }
 
-      // If 11 digits, calculate missing 12th check digit
       if (digits.length === 11) {
         return digits + calcUPCCheckDigit(digits);
       }
 
-      // If 12 digits, check if check digit is valid or if leading zero was stripped
       if (digits.length === 12) {
         const expectedCheck = calcUPCCheckDigit(digits.substring(0, 11));
         if (parseInt(digits[11], 10) === expectedCheck) {
-          return digits; // Already perfectly valid
+          return digits;
         }
 
-        // Test if Excel stripped a leading zero
         const padded = '0' + digits.substring(0, 11);
         const paddedCheck = calcUPCCheckDigit(padded.substring(0, 11));
         if (parseInt(digits[11], 10) === paddedCheck) {
-          return padded; // Recovered leading zero!
+          return padded;
         }
 
-        // Otherwise repair the 12th check digit
         return digits.substring(0, 11) + expectedCheck;
       }
 
@@ -594,7 +574,6 @@
       return true;
     }
 
-    /* SAFE BARCODE RENDERER WITH CODE128 FALLBACK */
     function renderSvgOrCanvasBarcode(selector, code, config) {
       try {
         JsBarcode(selector, code, config);
@@ -628,7 +607,6 @@
       }
     }
 
-    /* BATCH IMPORT FUNCTIONS */
     function openImportModal() {
       document.getElementById('importModal').style.display = 'flex';
     }
@@ -650,6 +628,7 @@
       reader.readAsText(file);
     }
 
+    /* BATCH IMPORT WITH CORRECT SEQUENCING & EXPANDED CAPACITY */
     function processImport() {
       const text = document.getElementById('importTextArea').value.trim();
       if (!text) {
@@ -658,8 +637,7 @@
       }
 
       const lines = text.split('\n');
-      let validCount = 0;
-      importedBatchMap = {};
+      let parsedItems = [];
 
       lines.forEach(line => {
         const cleanLine = line.trim();
@@ -676,31 +654,35 @@
         const normalizedUpc = normalizeUPC(rawUpc);
 
         if (/^\d{12}$/.test(normalizedUpc)) {
-          saveToLocalStorage(normalizedUpc, itemName);
-          importedBatchMap[normalizedUpc] = qty;
-          validCount++;
+          parsedItems.push({ upc: normalizedUpc, name: itemName, qty: qty });
         }
       });
 
-      if (validCount === 0) {
+      if (parsedItems.length === 0) {
         alert("No valid UPC codes were found in your input. Ensure lines contain numerical UPCs.");
         return;
+      }
+
+      importedBatchMap = {};
+      
+      // Process in reverse so unshift preserves original CSV row 1 at the top of history!
+      for (let i = parsedItems.length - 1; i >= 0; i--) {
+        const item = parsedItems[i];
+        saveToLocalStorage(item.upc, item.name);
+        importedBatchMap[item.upc] = item.qty;
       }
 
       closeImportModal();
       openAveryModal();
       switchAveryTab('batch');
       
-      const firstImportedUpc = Object.keys(importedBatchMap)[0];
-      const match = savedHistory.find(i => (typeof i === 'object' ? i.upc : i) === firstImportedUpc);
-      if (match) {
-        loadCode(firstImportedUpc, typeof match === 'object' ? match.name : '');
-      }
+      const firstImportedUpc = parsedItems[0].upc;
+      const firstImportedName = parsedItems[0].name;
+      loadCode(firstImportedUpc, firstImportedName);
 
-      alert(`Successfully processed ${validCount} barcode(s) into your batch sheet!`);
+      alert(`Successfully processed ${parsedItems.length} barcode(s) into your batch sheet!`);
     }
 
-    /* PRINT MANAGER & GRAYED-OUT BUTTON CHECKER */
     function openAveryModal() {
       if (savedHistory.length === 0) {
         const currentUpc = normalizeUPC(document.getElementById('upcInput').value.trim());
@@ -735,7 +717,6 @@
         });
       }
 
-      // Gray out / disable print button if total quantity is 0
       printBtn.disabled = (totalQty <= 0);
     }
 
@@ -822,7 +803,6 @@
       document.getElementById('averyModal').style.display = 'none';
     }
 
-    /* MULTI-PAGE AVERY PRINT GENERATOR WITH FAILSAFE BARCODE DRAW */
     function printAverySheet() {
       const template = document.getElementById('averyTemplateSelect').value;
       const maxCells = template === '6525' ? 10 : 30;
@@ -919,7 +899,6 @@
 
       document.body.classList.add('printing-avery');
 
-      // Slight delay ensures SVGs fully render in DOM before firing print dialog
       setTimeout(() => {
         window.print();
         setTimeout(() => {
@@ -928,7 +907,6 @@
       }, 150);
     }
 
-    /* CAMERA SCANNER FUNCTIONS */
     async function openScanner() {
       document.getElementById('scannerModal').style.display = 'flex';
 
@@ -1007,7 +985,6 @@
       }
     }
 
-    /* COPY / DOWNLOAD / EMAIL */
     async function copyBarcodeImage() {
       const canvas = document.getElementById('barcode');
       try {
@@ -1053,12 +1030,12 @@
       }
     }
 
-    /* LOCAL STORAGE */
+    /* RAISED HISTORY CAPACITY LIMIT TO 2,000 ITEMS */
     function saveToLocalStorage(upc, itemName) {
       const normalized = normalizeUPC(upc);
       savedHistory = savedHistory.filter(item => (typeof item === 'object' ? item.upc : item) !== normalized);
       savedHistory.unshift({ upc: normalized, name: itemName });
-      if (savedHistory.length > 100) savedHistory.pop();
+      if (savedHistory.length > 2000) savedHistory.pop();
       localStorage.setItem('my_upc_history', JSON.stringify(savedHistory));
       renderHistory();
     }
